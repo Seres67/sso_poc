@@ -1,77 +1,30 @@
+import "./env";
 import express from "express";
-import { config } from "dotenv";
 import session from "express-session";
-import {
-  AuthorizationUrlRequest,
-  ConfidentialClientApplication,
-  Configuration,
-} from "@azure/msal-node";
+import authRouter from "./routers/auth.router";
+import calendarRouter from "./routers/calendar.router";
+import userRouter from "./routers/user.router";
+import logger from "./middlewares/logger.middleware";
 
-config();
-
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 4000;
 
 const app = express();
 
 app.use(
   session({
-    secret: "REDACTED", //TODO: change me
+    secret: process.env.SESSION_SECRET as string,
     resave: false,
     saveUninitialized: true,
+    cookie: { secure: false, sameSite: "none", httpOnly: false },
   }),
 );
 
-const msalConfig: Configuration = {
-  auth: {
-    clientId: "REDACTED", //TODO: change me
-    authority: "https://login.microsoftonline.com/REDACTED", //TODO: change me
-    clientSecret: "REDACTED", //TODO: change me
-  },
-};
+app.use(logger);
 
-const cca = new ConfidentialClientApplication(msalConfig);
+app.use("/auth", authRouter);
+app.use("/calendars", calendarRouter);
+app.use("/users", userRouter);
 
-app.get("/auth/microsoft", (req, res) => {
-  const authCodeUrlParameters: AuthorizationUrlRequest = {
-    scopes: ["openid", "profile", "email"],
-    redirectUri: "http://localhost:3000/auth/callback",
-  };
-  cca
-    .getAuthCodeUrl(authCodeUrlParameters)
-    .then((response) => {
-      res.redirect(response);
-    })
-    .catch((err) => {
-      console.log(err);
-      res.sendStatus(500);
-    });
+app.listen(PORT, () => {
+  console.log("server started!");
 });
-
-app.get("/auth/callback", async (req, res) => {
-  const tokenRequest = {
-    code: req.query.code,
-    scopes: ["openid", "profile", "email"],
-    redirectUri: "http://localhost:3000/auth/callback",
-  };
-  try {
-    const response = await cca.acquireTokenByCode(tokenRequest);
-    req.session.user = response.account;
-    res.redirect("/");
-  } catch (err) {
-    console.log(err);
-    res.sendStatus(500);
-  }
-});
-
-app.get("/logout", (req, res) => {
-  req.session.destroy(() => {
-    res.redirect("/");
-  });
-});
-
-app.get("/", (req, res) => {
-  if (req.session.user) res.send(`Hello ${req.session.user.name}`);
-  else res.redirect("/auth/microsoft");
-});
-
-app.listen(PORT, () => {});
